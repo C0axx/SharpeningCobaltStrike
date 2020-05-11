@@ -51,6 +51,7 @@ This project uses a modified version of [SharpGen](https://github.com/cobbr/Shar
 * https://github.com/cobbr/SharpGen
 * https://github.com/cobbr/Covenant
 
+The APC shellcode loader is taken from https://github.com/FuzzySecurity/Sharp-Suite/tree/master/UrbanBishop 
 
 To use this you first need to install dotnet core sdk
 ```
